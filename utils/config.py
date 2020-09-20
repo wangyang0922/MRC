@@ -20,10 +20,14 @@ zhidao_train_data_path = os.path.join(root, 'data', 'zhidao.train.json')
 search_test_data_path = os.path.join(root, 'data', 'search.test.json')
 zhidao_test_data_path = os.path.join(root, 'data', 'zhidao.test.json')
 
+# 测试数据路径
+squad_dev_data_path = os.path.join(root, 'data', 'squad_dev_v2.0.json')
+squad_train_data_path = os.path.join(root, 'data', 'squad_train_v2.0.json')
+
 # 合并分词
 merger_seg_path = os.path.join(root, 'data', 'merged_seg_data.csv')
 merger_dev_seg_path = os.path.join(root, 'data', 'merged_dev_seg_data.csv')
-
+squad2_merger_dev_seg_path = os.path.join(root, 'data', 'squad2_merger_dev_seg_data.csv')
 # 停用词路径
 # stop_word_path = os.path.join(root, 'data', 'stopwords/哈工大停用词表.txt')
 stop_word_path = os.path.join(root, 'data', 'stopwords/stopwords.txt')
@@ -33,11 +37,16 @@ user_dict = os.path.join(root, 'data', 'user_dict.txt')
 
 # 词向量路径
 save_wv_model_path = os.path.join(root, 'data', 'wv', 'word2vec.model')
+# 词向量路径
+save_squad2_wv_model_path = os.path.join(root, 'data', 'wv', 'squad2_word2vec.model')
 # 词向量矩阵保存路径
 embedding_matrix_path = os.path.join(root, 'data', 'wv', 'embedding_matrix')
 # 字典路径
 vocab_path = os.path.join(root, 'data', 'wv', 'vocab.txt')
 reverse_vocab_path = os.path.join(root, 'data', 'wv', 'reverstest_save_dire_vocab.txt')
+
+# 字典路径
+squad2_vocab_path = os.path.join(root, 'data', 'wv', 'squad2_vocab.txt')
 
 # 词向量训练轮数
 wv_train_epochs = 1

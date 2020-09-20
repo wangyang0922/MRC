@@ -2,6 +2,7 @@
 # Created by LuoJie at 11/16/19
 import jieba
 import pandas as pd
+import nltk
 import numpy as np
 from collections import defaultdict
 from utils.file_utils import save_dict
@@ -22,42 +23,42 @@ def build_dataset(search_dev_data_path, zhidao_dev_data_path):
     :param zhidao_dev_data_path: zhidao集路径
     :return: 合并后的数据
     '''
-    # # 1.加载数据
-    # search_dev_df = pd.read_json(search_dev_data_path, lines=True)
-    # zhidao_dev_df = pd.read_json(zhidao_dev_data_path,encoding='utf-8', lines=True)
-    # print('search dev data size {},zhidao dev data size {}'.format(len(search_dev_df), len(zhidao_dev_df)))
-    # # print(search_dev_data.columns)
-    #
-    # search_dev_df['answers'] = search_dev_df[['answers']].apply(sentence_proc, axis=1)
-    # search_dev_df['entity_answers'] = search_dev_df[['entity_answers']].apply(sentences_proc, axis=1)
-    # search_dev_df['documents'] = search_dev_df[['documents']].apply(documents_proc, axis=1)
-    # zhidao_dev_df['answers'] = zhidao_dev_df[['answers']].apply(sentence_proc, axis=1)
-    # zhidao_dev_df['entity_answers'] = zhidao_dev_df[['entity_answers']].apply(sentences_proc, axis=1)
-    # zhidao_dev_df['documents'] = zhidao_dev_df[['documents']].apply(documents_proc, axis=1)
-    #
-    # # print(search_dev_df["documents"])
-    # # print(search_dev_df['entity_answers'])
-    # # print(search_dev_df['question'])
-    # # print(search_dev_df['answers'])
-    # # print(zhidao_dev_df["documents"])
-    # # print(zhidao_dev_df['entity_answers'])
-    # # print(zhidao_dev_df['question'])
-    # # print(zhidao_dev_df['answers'])
-    #
-    #
-    # # 3.多线程, 批量数据处理
-    # search_dev_df = parallelize(search_dev_df, split_sentences_proc)
-    # zhidao_dev_df = parallelize(zhidao_dev_df, split_sentences_proc)
-    #
-    # # 4. 合并训练测试集合
-    # search_dev_df['merged'] = search_dev_df[['documents', 'entity_answers', 'question', 'answers']].apply(lambda x: ' '.join(x), axis=1)
-    # zhidao_dev_df['merged'] = search_dev_df[['documents', 'entity_answers', 'question', 'answers']].apply(lambda x: ' '.join(x), axis=1)
-    # merged_df = pd.concat([search_dev_df[['merged']], zhidao_dev_df[['merged']]], axis=0)
-    # print('train data size {},test data size {},merged_df data size {}'.format(len(search_dev_df),
-    #                                                                            len(zhidao_dev_df),
-    #                                                                            len(merged_df)))
-    # # 6. 保存合并数据
-    # merged_df.to_csv(merger_dev_seg_path, index=None, header=False)
+    # 1.加载数据
+    search_dev_df = pd.read_json(search_dev_data_path, lines=True)
+    zhidao_dev_df = pd.read_json(zhidao_dev_data_path,encoding='utf-8', lines=True)
+    print('search dev data size {},zhidao dev data size {}'.format(len(search_dev_df), len(zhidao_dev_df)))
+    # print(search_dev_data.columns)
+
+    search_dev_df['answers'] = search_dev_df[['answers']].apply(sentence_proc, axis=1)
+    search_dev_df['entity_answers'] = search_dev_df[['entity_answers']].apply(sentences_proc, axis=1)
+    search_dev_df['documents'] = search_dev_df[['documents']].apply(documents_proc, axis=1)
+    zhidao_dev_df['answers'] = zhidao_dev_df[['answers']].apply(sentence_proc, axis=1)
+    zhidao_dev_df['entity_answers'] = zhidao_dev_df[['entity_answers']].apply(sentences_proc, axis=1)
+    zhidao_dev_df['documents'] = zhidao_dev_df[['documents']].apply(documents_proc, axis=1)
+
+    # print(search_dev_df["documents"])
+    # print(search_dev_df['entity_answers'])
+    # print(search_dev_df['question'])
+    # print(search_dev_df['answers'])
+    # print(zhidao_dev_df["documents"])
+    # print(zhidao_dev_df['entity_answers'])
+    # print(zhidao_dev_df['question'])
+    # print(zhidao_dev_df['answers'])
+
+
+    # 3.多线程, 批量数据处理
+    search_dev_df = parallelize(search_dev_df, split_sentences_proc)
+    zhidao_dev_df = parallelize(zhidao_dev_df, split_sentences_proc)
+
+    # 4. 合并训练测试集合
+    search_dev_df['merged'] = search_dev_df[['documents', 'entity_answers', 'question', 'answers']].apply(lambda x: ' '.join(x), axis=1)
+    zhidao_dev_df['merged'] = search_dev_df[['documents', 'entity_answers', 'question', 'answers']].apply(lambda x: ' '.join(x), axis=1)
+    merged_df = pd.concat([search_dev_df[['merged']], zhidao_dev_df[['merged']]], axis=0)
+    print('train data size {},test data size {},merged_df data size {}'.format(len(search_dev_df),
+                                                                               len(zhidao_dev_df),
+                                                                               len(merged_df)))
+    # 6. 保存合并数据
+    merged_df.to_csv(merger_dev_seg_path, index=None, header=False)
 
     # 7. 训练词向量
     print('start build w2v model')
@@ -77,12 +78,9 @@ def build_dataset(search_dev_data_path, zhidao_dev_data_path):
 
     # 10、保存词向量模型
     wv_model.save(save_wv_model_path)
-    # 11、保存字典
-    save_dict(vocab_path, vocab)
 
-    # 12. 保存词向量矩阵
-    embedding_matrix = wv_model.wv[vocab]
-    np.save(embedding_matrix_path, embedding_matrix)
+
+
 
     return
 def split_sentence_proc(sentence):
@@ -97,6 +95,19 @@ def split_sentence_proc(sentence):
     sentence = seg_proc(sentence)
     # 过滤停用词
     words = filter_words(sentence)
+    # 拼接成一个字符串,按空格分隔
+    return ' '.join(words)
+
+def en_split_sentence_proc(sentence):
+    '''
+    预处理模块
+    :param sentence:待处理字符串
+    :return: 处理后的字符串
+    '''
+    # 用词清除无
+    # sentence = clean_sentence(sentence)
+    # 分段切词
+    words = cut_sentence(sentence)
     # 拼接成一个字符串,按空格分隔
     return ' '.join(words)
 
@@ -146,6 +157,11 @@ def cut_sentence(line):
     tokens = jieba.cut(line)
     return ' '.join(tokens)
 
+def en_cut_sentence(line):
+    # 切词，默认精确模式，全模式cut参数cut_all=True
+    tokens = nltk.word_tokenize(line)
+    return ' '.join(tokens)
+
 def split_sentences_proc(df):
     '''
     数据集批量处理方法
@@ -157,6 +173,16 @@ def split_sentences_proc(df):
         df[col_name] = df[col_name].apply(split_sentence_proc)
     return df
 
+def en_split_sentences_proc(df):
+    '''
+    数据集批量处理方法
+    :param df: 数据集
+    :return:处理好的数据集
+    '''
+    # 批量预处理 训练集和测试集
+    for col_name in ['merge']:
+        df[col_name] = df[col_name].apply(en_split_sentence_proc)
+    return df
 def sentences_proc(df):
     df.fillna('', inplace=True)
     res = df.apply(lambda x: [' | '.join(data) for data in x])
@@ -242,4 +268,5 @@ def build_vocab(items, sort=True, min_count=0, lower=False):
 
 if __name__ == '__main__':
     # 数据集批量处理
-    build_dataset(search_dev_data_path, zhidao_dev_data_path)
+    en_cut_sentence("i am a boy")
+    # build_dataset(search_dev_data_path, zhidao_dev_data_path)
