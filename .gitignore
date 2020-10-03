@@ -1,0 +1,6 @@
+
+.idea
+/BiDAF_tf2/__pycache__/
+/BiDAF_tf2/layers/__pycache__
+/utils/__pycache__
+.ipynb_checkpoints
