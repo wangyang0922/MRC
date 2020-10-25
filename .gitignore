@@ -5,3 +5,6 @@
 /utils/__pycache__
 .ipynb_checkpoints
 BiDAF_tf2/data
+BiDAF_tf2_bert/data
+/BiDAF_tf2_bert/__pycache__/
+/BiDAF_tf2_bert/layers/__pycache__
