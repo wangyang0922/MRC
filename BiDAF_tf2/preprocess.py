@@ -1,64 +1,73 @@
-import numpy as np
-import data_io as pio
-import nltk
+import os
+import pickle
+from collections import Counter
 
-GLOVE_FILE_PATH = "data/glove/glove.6B.50d.txt"
+import numpy as np
+from tqdm import tqdm
+
+import data_io as pio
+from config import dat_charset_fname, dat_wordset_fname, max_char_len
+
+
 class Preprocessor:
     def __init__(self, datasets_fp, max_length=384, stride=128):
         self.datasets_fp = datasets_fp
         self.max_length = max_length
-        self.max_clen = 100
-        self.max_qlen = 100
-        self.max_char_len = 16
+        self.max_clen = 30
+        self.max_qlen = 20
+        self.max_char_len = max_char_len
         self.stride = stride
+        # 限制最小频率
+        self.min_count = 50
         self.charset = set()
-        # self.wordset = set()
-        self.embeddings_index = {}
-        self.embedding_matrix = []
-        self.word_list = []
+        self.wordset = set()
         self.build_charset()
-        self.load_glove(GLOVE_FILE_PATH)
-        self.build_wordset()
 
     def build_charset(self):
         for fp in self.datasets_fp:
-            self.charset |= self.dataset_char_info(fp)
+            charset, wordset = self.dataset_info(fp)
+            self.charset |= charset
+            self.wordset |= wordset
 
+        # char
         self.charset = sorted(list(self.charset))
         self.charset = ['[PAD]', '[CLS]', '[SEP]'] + self.charset + ['[UNK]']
         idx = list(range(len(self.charset)))
-        self.ch2id = dict(zip(self.charset, idx))
-        self.id2ch = dict(zip(idx, self.charset))
-        # print(self.ch2id, self.id2ch)
-    
-    def build_wordset(self):
-        idx = list(range(len(self.word_list)))
-        self.w2id = dict(zip(self.word_list, idx))
-        self.id2w = dict(zip(idx, self.word_list))
-        # print(self.w2id, self.id2w)
 
+        self.char2id = dict(zip(self.charset, idx))
+        self.id2char = dict(zip(idx, self.charset))
 
-    def dataset_char_info(self, inn):
-        charset = set()
-        dataset = pio.load(inn)
+        # word
+        self.wordset = sorted(list(self.wordset))
+        self.wordset = ['[PAD]', '[CLS]', '[SEP]'] + self.wordset + ['[UNK]']
+        idx = list(range(len(self.wordset)))
 
-        for _, context, question, answer, _ in self.iter_cqa(dataset):
-            charset |= set(context) | set(question) | set(answer)
-            # self.max_clen = max(self.max_clen, len(context))
-            # self.max_qlen = max(self.max_clen, len(question))
+        self.word2id = dict(zip(self.wordset, idx))
+        self.id2word = dict(zip(idx, self.wordset))
 
-        return charset
+    def dataset_info(self, inn):
+        if os.path.exists(dat_charset_fname) and os.path.exists(dat_wordset_fname):
+            charset = pickle.load(open(dat_charset_fname, 'rb'))
+            wordset = pickle.load(open(dat_wordset_fname, 'rb'))
+        else:
+            dataset = pio.load(inn)
 
-    # def dataset_word_info(self, inn):
-    #     wordset = set()
-    #     dataset = pio.load(inn)
+            char_content = ''
+            word_content = ''
+            for _, context, question, answer, _ in tqdm(self.iter_cqa(dataset)):
+                char_content += context + question + answer
+                word_content += ' ' + context + ' ' + question + ' ' + answer
 
-    #     for _, context, question, answer, _ in self.iter_cqa(dataset):
-    #         wordset |= set(self.seg_text(context)) | set(self.seg_text(question)) | set(self.seg_text(answer))
-    #         # self.max_clen = max(self.max_clen, len(context))
-    #         # self.max_qlen = max(self.max_clen, len(question))
+            char_count = Counter(char_content)
+            word_count = Counter(word_content.split(' '))
 
-    #     return wordset
+            # 过滤词频，返回set集合
+            charset = set([char for char, count in char_count.items() if count >= self.min_count])
+            wordset = set([word for word, count in word_count.items() if count >= self.min_count])
+
+        pickle.dump(charset, open(dat_charset_fname, 'wb'))
+        pickle.dump(wordset, open(dat_wordset_fname, 'wb'))
+        return charset, wordset
 
     def iter_cqa(self, dataset):
         for data in dataset['data']:
@@ -72,140 +81,126 @@ class Preprocessor:
                         answer_start = answer['answer_start']
                         yield qid, context, question, text, answer_start
 
-    def char_encode(self, context, question):
-        q_seg_list = self.seg_text(question)
-        c_seg_list = self.seg_text(context)
-        question_encode = self.convert2id_char(max_char_len=self.max_char_len,begin=True, end=True, word_list=q_seg_list)
-        print(question_encode)
-        left_length = self.max_length - len(question_encode)
-        context_encode = self.convert2id_char(max_char_len=self.max_char_len,maxlen=left_length, end=True, word_list=c_seg_list)
-        cq_encode = question_encode + context_encode
+    def encode(self, context, question):
+        question_word_encode = self.convert_word2id(question, begin=True, end=True)
+        left_length = self.max_length - len(question_word_encode)
+        context_word_encode = self.convert_word2id(context, maxlen=left_length, end=True)
+        cq_word_encode = question_word_encode + context_word_encode
 
-        assert len(cq_encode) == self.max_length
+        assert len(cq_word_encode) == self.max_length
 
-        return cq_encode
+        question_char_encode = self.convert_char2id(question, begin=True, end=True)
+        left_length = self.max_length - len(question_char_encode)
+        context_char_encode = self.convert_char2id(context, maxlen=left_length, end=True)
+        cq_char_encode = question_char_encode + context_char_encode
 
-    def word_encode(self, context, question):
-        q_seg_list = self.seg_text(question)
-        c_seg_list = self.seg_text(context)
-        question_encode = self.convert2id_word(begin=True, end=True, word_list=q_seg_list)
-        left_length = self.max_length - len(question_encode)
-        context_encode = self.convert2id_word(maxlen=left_length, end=True, word_list=c_seg_list)
-        cq_encode = question_encode + context_encode
+        return cq_word_encode, cq_char_encode
 
-        assert len(cq_encode) == self.max_length
-
-        return cq_encode
-
-    def convert2id_char(self, max_char_len=None, maxlen=None, begin=False, end=False, word_list = []):
-        char_list = []
-        char_list = [[self.get_id_char('[CLS]')] + [self.get_id_char('[PAD]')] * (max_char_len-1)] * begin + char_list
-        for word in word_list:
-            ch = [ch for ch in word]
-            if max_char_len is not None:
-                ch = ch[:max_char_len]
-
-            ids = list(map(self.get_id_char, ch))
-            while len(ids) < max_char_len:
-                ids.append(self.get_id_char('[PAD]'))
-            char_list.append(np.array(ids))
+    def convert_word2id(self, sent, maxlen=None, begin=False, end=False):
+        words = sent.split()
+        words = ['[CLS]'] * begin + words
 
         if maxlen is not None:
-            char_list = char_list[:maxlen - 1 * end]
-            # char_list += [[self.get_id_char('[SEP]')]] * end
-            char_list += [[self.get_id_char('[PAD]')] * max_char_len] * (maxlen - len(char_list))
-        # else:
-        #     char_list += [[self.get_id_char('[SEP]')]] * end
+            words = words[:maxlen - 1 * end]
+            words += ['[SEP]'] * end
+            words += ['[PAD]'] * (maxlen - len(words))
+        else:
+            words += ['[SEP]'] * end
 
-        return char_list
-
-    def convert2id_word(self, maxlen=None, begin=False, end=False, word_list=[]):
-        ch = [ch for ch in word_list]
-        ch = ['cls'] * begin + ch
-
-        if maxlen is not None:
-            ch = ch[:maxlen - 1 * end]
-            # ch += ['sep'] * end
-            ch += ['pad'] * (maxlen - len(ch))
-        # else:
-        #     ch += ['sep'] * end
-
-        ids = list(map(self.get_id_word, ch))
+        ids = list(map(self.get_word_id, words))
 
         return ids
 
-    def get_id_char(self, ch):
-        return self.ch2id.get(ch, self.ch2id['[UNK]'])
+    def convert_char2id(self, sent, maxlen=None, begin=False, end=False):
+        words = sent.split()
+        words = [list(word)[:self.max_char_len] if len(word) > self.max_char_len \
+                     else list(word) + ['[PAD]'] * (self.max_char_len - len(word)) for word in words]
 
-    def get_id_word(self, ch):
-        return self.w2id.get(ch, self.w2id['unk'])
+        # pad chars
+        words += [['[PAD]'] * self.max_char_len] * (maxlen - len(words))
 
-    def get_dataset(self, ds_fp):
-        ccs, qcs, cws, qws, be = [], [], [], [], []
-        for _, cc, qc,cw, qw, b, e in self.get_data(ds_fp):
-            ccs.append(cc)
-            qcs.append(qc)
+        words += [['[CLS]'] + ['[PAD]'] * (self.max_char_len - 1)] * begin + words
 
-            # print(len(ccs))
-            # print(map(np.array, (qc)))
-            cws.append(cw)
-            qws.append(qw)
-            be.append((b, e))
-        # print(c for c in ccs)
-        return map(np.array, (ccs, qcs, cws, qws, be))
+        if maxlen is not None:
+            words = words[:maxlen - 1 * end]
+            words += [['[SEP]'] + ['[PAD]'] * (self.max_char_len - 1)] * end
+            words += [['[PAD]'] * self.max_char_len] * (maxlen - len(words))
+        else:
+            words += [['[SEP]'] + ['[PAD]'] * (self.max_char_len - 1)] * end
 
+        ids = [self.get_char_id(word) for word in words]
+
+        return ids
+
+    def get_char_id(self, word):
+        return [self.char2id.get(char, self.char2id['[UNK]']) for char in word]
+
+    def get_word_id(self, word):
+        return self.get_id(word)
+
+    def get_id(self, word):
+        # 获取index,无则填充UNK
+        return self.word2id.get(word, self.word2id['[UNK]'])
+
+    def get_dataset(self, ds_fp, pickle_data_path):
+        if pickle_data_path and os.path.exists(pickle_data_path):
+            print('loading pickle_dataset:', pickle_data_path)
+            proc_data = pickle.load(open(pickle_data_path, 'rb'))
+        else:
+            contents_word_ids, questions_word_ids, begin_and_end = [], [], []
+            # ADD char list
+            contents_char_ids, questions_char_ids = [], []
+            for _, content_word_ids, question_word_ids, content_char_ids, question_char_ids, begin, end in tqdm(
+                    self.get_data(
+                        ds_fp)):
+                # WORD
+                contents_word_ids.append(content_word_ids)
+                questions_word_ids.append(question_word_ids)
+                # CHAR
+                contents_char_ids.append(content_char_ids)
+                questions_char_ids.append(question_char_ids)
+                begin_and_end.append((begin, end))
+
+            contents_word_ids = np.array(contents_word_ids, dtype=np.int32)
+            questions_word_ids = np.array(questions_word_ids, dtype=np.int32)
+            contents_char_ids = np.array(contents_char_ids, dtype=np.int32)
+            questions_char_ids = np.array(questions_char_ids, dtype=np.int32)
+            begin_and_end = np.array(begin_and_end, dtype=np.int32)
+
+            proc_data = [contents_word_ids, questions_word_ids, contents_char_ids, questions_char_ids,
+                         begin_and_end]
+            pickle.dump(proc_data, open(pickle_data_path, 'wb'))
+            print('save proc_data done', pickle_data_path)
+        return proc_data
 
     def get_data(self, ds_fp):
         dataset = pio.load(ds_fp)
         for qid, context, question, text, answer_start in self.iter_cqa(dataset):
-            c_seg_list = self.seg_text(context)
-            q_seg_list = self.seg_text(question)
-            c_char_ids = self.get_sent_ids_char(maxlen=self.max_clen, word_list=c_seg_list)
-            q_char_ids = self.get_sent_ids_char(maxlen=self.max_qlen, begin=True, word_list=q_seg_list)
-            c_word_ids = self.get_sent_ids_word(maxlen=self.max_clen, word_list=c_seg_list)
-            q_word_ids = self.get_sent_ids_word(maxlen=self.max_qlen, begin=True, word_list=q_seg_list)
-            b, e = answer_start, answer_start + len(text)
-            nb = -1
-            ne = -1
-            len_all_char = 0
-            for i, w in enumerate(c_seg_list):
-                if i == 0:
-                    continue
-                if b > len_all_char -1 and b <= len_all_char+len(w) -1:
-                    b = i + 1
-                if e > len_all_char -1 and e <= len_all_char+len(w) -1:
-                    e = i + 1
-                len_all_char += len(w)
-                
-            if ne == -1:
-                b = e = 0
-            yield qid, c_char_ids, q_char_ids,  c_word_ids, q_word_ids, b, e
+            content_word_ids = self.get_sent_word_ids(context, self.max_clen)
+            question_word_ids = self.get_sent_word_ids(question, self.max_qlen)
 
-    def get_sent_ids_char(self, maxlen=0, begin=False, end=True, word_list=[]):
-        return self.convert2id_char(max_char_len=self.max_char_len, maxlen=maxlen, begin=False, end=True, word_list = word_list)
+            content_char_ids = self.get_sent_char_ids(context, self.max_clen)
+            question_char_ids = self.get_sent_char_ids(question, self.max_qlen)
+            begin, end = answer_start, answer_start + len(text)
+            if end >= len(content_word_ids):
+                begin = end = 0
+            yield qid, content_word_ids, question_word_ids, content_char_ids, question_char_ids, begin, end
 
-    def get_sent_ids_word(self, maxlen=0, begin=False, end=True, word_list=[]):
-        return self.convert2id_word(maxlen=maxlen, begin=False, end=True, word_list = self.word_list)
-    
-    def seg_text(self, text):
-        words = [word.lower() for word in nltk.word_tokenize(text)]
-        return words
-    
-    def load_glove(self, glove_file_path):
-        with open(glove_file_path, encoding='utf-8') as fr:
-            for line in fr:
-                word, coefs = line.split(maxsplit=1)
-                coefs = np.fromstring(coefs, sep=' ')
-                self.embeddings_index[word] = coefs
-                self.word_list.append(word)
-                self.embedding_matrix.append(coefs)
+    def get_sent_word_ids(self, sent, maxlen):
+        return self.convert_word2id(sent, maxlen=maxlen, end=True)
+
+    def get_sent_char_ids(self, sent, maxlen):
+        return self.convert_char2id(sent, maxlen=maxlen, end=True)
+
 
 if __name__ == '__main__':
     p = Preprocessor([
-        './data/squad/train-v1.1.json',
+        # './data/squad/train-v1.1.json',
         './data/squad/dev-v1.1.json',
-        './data/squad/dev-v1.1.json'
+        # './data/squad/dev-v1.1.json'
     ])
-    # print(p.get_id_char('[CLS]'))
-    print(p.char_encode('modern stone statue of Mary', 'To whom did the Virgin Mary'))
-    print(p.word_encode('modern stone statue of Mary', 'To whom did the Virgin Mary'))
+    print(len(p.word2id))
+    print(len(p.char2id))
+    # [['T', 'o'], ['w', 'h', 'o', 'm'], ['d', 'i', 'd'], ['t', 'h', 'e'], ['V', 'i', 'r', 'g', 'i', 'n'], ['M', 'a', 'r', 'y']]
+    cq_word_encode, cq_char_encode = p.encode('modern stone statue of Mary', 'To whom did the Virgin Mary')
+    print(cq_char_encode)

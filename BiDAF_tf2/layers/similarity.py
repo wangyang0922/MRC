@@ -1,5 +1,6 @@
 import tensorflow as tf
 
+
 class Similarity(tf.keras.layers.Layer):
 
     def build(self, input_shape):
