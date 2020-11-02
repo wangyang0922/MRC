@@ -1,10 +1,8 @@
 import numpy as np
 import data_io as pio
 import nltk
-[['aaa', 'bbbb'],['ccc','ddd']]
-[[['a','a','a'],['b','b','b','b']],[['c','c','c'],['d','d','d']]]
 
-GLOVE_FILE_PATH = ".\data\glove\glove.6B.50d.txt"
+GLOVE_FILE_PATH = "data/glove/glove.6B.50d.txt"
 class Preprocessor:
     def __init__(self, datasets_fp, max_length=384, stride=128):
         self.datasets_fp = datasets_fp
